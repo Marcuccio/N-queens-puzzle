@@ -1,5 +1,5 @@
 [package]
-name = "N-queens-problema"
+name = "n-queens-puzzle"
 version = "0.1.0"
 authors = ["marco"]
 edition = "2018"
