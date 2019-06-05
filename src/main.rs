@@ -1,183 +1,149 @@
 use std::io;
-use std::cmp;
-use std::fmt;
-
-struct Chessboard {
-    board: Vec<Vec<u16>>,
-}
+use rand::Rng;
 
 fn main() {
 
     println!("Please input the number of queens.");
 
-    let mut queens_count = String::new();
+    let mut n_queens = String::new();
 
-    io::stdin().read_line(&mut queens_count).expect("Failed to read line");
+    io::stdin().read_line(&mut n_queens).expect("Failed to read line");
 
-    let n: usize = match queens_count.trim().parse() {
-        Ok(num) => num,
+    let n: usize = match n_queens.trim().parse() {
+        Ok(n) => n,
         Err(_) => panic!(),
     };
 
-    let mut chessboard = Chessboard::new(n);
+    let mut rows: Vec<usize> = (0..n).map(|_| rand::thread_rng().gen_range(0, n)).collect();
+
+    let mut candidates: Vec<usize> = vec![0, n/2];
+
+    // println!("Queens pos: {:?}", rows);
+
+    let mut moves: usize = 0;
+
+    loop {
+        // Find nastiest queen
+        let mut max_conflicts: u16 = u16::min_value();
+        candidates.clear();
+
+        for (col, row)  in rows.iter().enumerate() {
+            let conflicts: u16 = conflicts(*row, col, &rows);
+            if conflicts == max_conflicts {
+                candidates.push(col);
+            } else if conflicts > max_conflicts {
+                max_conflicts = conflicts;
+                candidates.clear();
+                candidates.push(col);
+            }
+        }
+
+        if max_conflicts == 0 {
+            // Checked *every* queen and found no conflicts
+            break;
+        }
+
+        // Pick a random queen from those that had the most conflicts
+        let rand_index = rand::thread_rng().gen_range(0, candidates.len());
+        let worst_queen_column: usize = candidates[rand_index];
+
+        // println!("Move: #{}, max_conflicts: {} in C{} out-of: {}", moves, max_conflicts, worst_queen_column, candidates.len());
+
+        // Move her to the place with the least conflicts.
+        let mut min_conflicts:u16 = u16::max_value();
+        candidates.clear();
+
+        for row in 0..rows.len() {
+            let conflicts: u16 = conflicts(row, worst_queen_column, &rows);
+
+            if conflicts == min_conflicts {
+                candidates.push(row);
+            } else if conflicts < min_conflicts {
+                min_conflicts = conflicts;
+                candidates.clear();
+                candidates.push(row);
+            }
+        }
+
+        if !candidates.is_empty() {
+            let rand_index = rand::thread_rng().gen_range(0, candidates.len());
+            rows[worst_queen_column] = candidates[rand_index];
+            // println!("Move: #{}, min_conflicts: {} in R{}, out-of: {}", moves, min_conflicts, candidates[rand_index], candidates.len());
+        }
+
+        if moves == rows.len() * 2 {
+            // Trying too long... start oveprintln!("{:?}", rows);r.
+            shuffle_up(&mut rows);
+            moves = 0;
+            // println!("--------------------------")
+        }
+
+        // println!("Move: #{}: {:?}", moves, rows);
+        moves += 1;
+    }
+
+    println!("COMPLETED");
+    println!("{:?}", rows);
 }
 
-impl Chessboard {
-    pub fn new(size: usize) -> Self {
-        assert!(size > 0);
+/**
+ * Returns the number of queens that conflict with (row,col), not
+ * counting the queen in column col.
+ */
+pub fn conflicts(row: usize, col: usize, rows: &Vec<usize>) -> u16 {
+    let mut count: u16 = 0;
 
-        Chessboard {
-            board: vec![vec![0; size]; size]
+    let mut c = 0;
+
+    while c < rows.len() {
+        if c == col { c += 1; continue; }
+
+        let r = rows[c];
+
+        if r == row {
+            // same row
+            count += 1;
+        } else {
+            let row_diff = if r > row {
+                r - row
+            } else {
+                row - r
+            };
+
+            let col_diff = if c > col {
+                c - col
+            } else {
+                col - c
+            };
+
+            if row_diff == col_diff {
+                // same diag
+                count += 1;
+            }
         }
+        c += 1;
     }
 
-    #[allow(dead_code)]
-    pub fn add_queen(&mut self, row: usize, col: usize) {
-        assert!(row < self.board.len() && col < self.board.len(), "Coordinates out of bound");
+    // println!("# conflicts for C{}R{} = {}", col, row, count);
 
-        self.board[row][col] = self.board[row][col] + 1;
-
-        let mut l_start_diagonal_row: usize = cmp::max(row - col, 0);
-        let mut l_start_diagonal_col: usize = col - (row - l_start_diagonal_row);
-
-        let r_start_diagonal_offset = cmp::min(row, self.board.len() - col - 1);
-        let mut r_start_diagonal_row: usize = row - r_start_diagonal_offset;
-        let mut r_start_diagonal_col: usize = col + r_start_diagonal_offset;
-
-        let mut index: usize = 0;
-
-        println!("left-diag: {},{}; right-diag: {},{}", l_start_diagonal_row, l_start_diagonal_col, r_start_diagonal_row, r_start_diagonal_col);
-
-        while index < self.board.len() {
-            /* The [row][col] position counter is modified above this loop.
-            ** Here, in this loop, we want to avoid to update the [row][col] again and again
-            ** during the column, row, diagonal counter-updating.
-            */
-            if index != col {
-                self.board[row][index] = self.board[row][index] + 1;
-            }
-
-            if index != row {
-                self.board[index][col] = self.board[index][col] + 1;
-            }
-
-            if l_start_diagonal_row < self.board.len() && l_start_diagonal_col < self.board.len()
-                    && l_start_diagonal_row != row && l_start_diagonal_col != col {
-
-                self.board[l_start_diagonal_row][l_start_diagonal_col] =
-                        self.board[l_start_diagonal_row][l_start_diagonal_col] + 1;
-
-                l_start_diagonal_row = l_start_diagonal_row + 1;
-                l_start_diagonal_col = l_start_diagonal_col + 1;
-            }
-
-            if r_start_diagonal_row < self.board.len() && r_start_diagonal_col > 0
-                    && r_start_diagonal_row != row && r_start_diagonal_col != col {
-
-                self.board[r_start_diagonal_row][r_start_diagonal_col] =
-                        self.board[r_start_diagonal_row][r_start_diagonal_col] + 1;
-
-                r_start_diagonal_row = r_start_diagonal_row + 1;
-                r_start_diagonal_col = r_start_diagonal_col - 1;
-            }
-
-            index = index + 1;
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn remove_queen(&mut self, row: usize, col: usize) {
-        assert!(row < self.board.len() && col < self.board.len(), "Coordinates out of bound");
-
-        self.board[row][col] = self.board[row][col] - 1;
-
-        let mut l_start_diagonal_row: usize = cmp::max(row - col, 0);
-        let mut l_start_diagonal_col: usize = col - (row - l_start_diagonal_row);
-
-        let r_start_diagonal_offset = cmp::min(row, self.board.len() - col - 1);
-        let mut r_start_diagonal_row: usize = row - r_start_diagonal_offset;
-        let mut r_start_diagonal_col: usize = col + r_start_diagonal_offset;
-
-        let mut index: usize = 0;
-
-        while index < self.board.len() {
-            /* The [row][col] posit`ion counter is modified above this loop.
-            ** Here, in this loop, we want to avoid to update the [row][col] again and again
-            ** during the column, row, diagonal counter-updating.
-            */
-            if index != col {
-                self.board[row][index] = self.board[row][index] - 1;
-            }
-
-            if index != row {
-                self.board[index][col] = self.board[index][col] - 1;
-            }
-
-            if l_start_diagonal_row < self.board.len() && l_start_diagonal_col < self.board.len()
-                    && l_start_diagonal_row != row && l_start_diagonal_col != col {
-
-                self.board[l_start_diagonal_row][l_start_diagonal_col] =
-                        self.board[l_start_diagonal_row][l_start_diagonal_col] - 1;
-
-                l_start_diagonal_row = l_start_diagonal_row + 1;
-                l_start_diagonal_col = l_start_diagonal_col + 1;
-            }
-
-            if r_start_diagonal_row < self.board.len() && r_start_diagonal_col > 0
-                    && r_start_diagonal_row != row && r_start_diagonal_col != col {
-
-                self.board[r_start_diagonal_row][r_start_diagonal_col] =
-                        self.board[r_start_diagonal_row][r_start_diagonal_col] - 1;
-
-                r_start_diagonal_row = r_start_diagonal_row + 1;
-                r_start_diagonal_col = r_start_diagonal_col - 1;
-            }
-
-            index = index + 1;
-        }
-    }
+    count
 }
 
-impl fmt::Display for Chessboard {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Extract the value using tuple indexing
-        // and create a reference to `vec`.
-        let vec = &self.board;
+pub fn shuffle_up(rows: &mut Vec<usize>) {
+    let mut i = 0;
 
-        write!(f, "[\n")?;
-
-        // Iterate over `vec` in `v` while enumerating the iteration
-        // count in `count`.
-        for (count, v) in vec.iter().enumerate() {
-            // For every element except the first, add a comma.
-            // Use the ? operator, or try!, to return on errors.
-            if count != 0 { write!(f, "\n")?; }
-            write!(f, "{:?}", v)?;
-        }
-
-        // Close the opened bracket and return a fmt::Result value
-        write!(f, "\n]")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn add_queen_1() {
-        let mut chessboard = Chessboard::new(4);
-        chessboard.add_queen(3,2);
-        assert_eq!(chessboard.board, [[0, 0, 1, 0], [1, 0, 1, 0], [0, 1, 1, 1], [1, 1, 1, 1]]);
-        // println!("{:}", chessboard);
+    while i < rows.len() {
+        rows[i] = i;
+        i += 1;
     }
 
-    #[test]
-    fn add_remove_queen_1() {
-        let mut chessboard = Chessboard::new(4);
-        chessboard.add_queen(3,2);
-        assert_eq!(chessboard.board, [[0, 0, 1, 0], [1, 0, 1, 0], [0, 1, 1, 1], [1, 1, 1, 1]]);
-        chessboard.remove_queen(3, 2);
-        assert_eq!(chessboard.board, [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]);
-        // println!("{:}", chessboard);
+    i = 0;
+
+    while i < rows.len() {
+        let j = rand::thread_rng().gen_range(0, rows.len());
+        let row_to_swap = rows[i];
+        rows[i] = rows[j];
+        rows[j] = row_to_swap;
+        i += 1;
     }
 }
