@@ -1,6 +1,13 @@
 use std::io;
 use rand::Rng;
 
+pub struct Conflicts {
+    collapsed_rows_conflicts: Vec<usize>,
+    collapsed_diag1_conflicts: Vec<usize>,
+    collapsed_diag2_conflicts: Vec<usize>,
+    diag1_offset: usize,
+}
+
 fn main() {
 
     println!("Please input the number of queens.");
@@ -14,21 +21,34 @@ fn main() {
         Err(_) => panic!(),
     };
 
-    let mut rows: Vec<usize> = (0..n).map(|_| rand::thread_rng().gen_range(0, n)).collect();
+    let mut chessboard_1d: Vec<usize> = (0..n).map(|_| rand::thread_rng().gen_range(0, n)).collect();
 
-    let mut candidates: Vec<usize> = vec![0, n/2];
+    let mut conflicts = Conflicts {
+        collapsed_rows_conflicts: vec![0; n],
+        collapsed_diag1_conflicts: vec![0; 2*n-1],
+        collapsed_diag2_conflicts: vec![0; 2*n-1],
+        diag1_offset: chessboard_1d.len() - 1
+    };
 
-    // println!("Queens pos: {:?}", rows);
+    compute_all_conflicts(&chessboard_1d, &mut conflicts);
+
+    let mut candidates: Vec<usize> = Vec::with_capacity(n/2);
 
     let mut moves: usize = 0;
 
     loop {
-        // Find nastiest queen
-        let mut max_conflicts: u16 = u16::min_value();
+        // Find the queens with more conflicts
+        let mut max_conflicts: usize = usize::min_value();
+
         candidates.clear();
 
-        for (col, row)  in rows.iter().enumerate() {
-            let conflicts: u16 = conflicts(*row, col, &rows);
+        for col in 0..n {
+            let row = chessboard_1d[col];
+
+            let conflicts: usize = (conflicts.collapsed_rows_conflicts[row] +
+                    conflicts.collapsed_diag1_conflicts[conflicts.diag1_offset + col - row] +
+                    conflicts.collapsed_diag2_conflicts[row + col]) - 3;
+
             if conflicts == max_conflicts {
                 candidates.push(col);
             } else if conflicts > max_conflicts {
@@ -46,15 +66,21 @@ fn main() {
         // Pick a random queen from those that had the most conflicts
         let rand_index = rand::thread_rng().gen_range(0, candidates.len());
         let worst_queen_column: usize = candidates[rand_index];
-
-        // println!("Move: #{}, max_conflicts: {} in C{} out-of: {}", moves, max_conflicts, worst_queen_column, candidates.len());
+        let worst_queen_row: usize = chessboard_1d[worst_queen_column];
 
         // Move her to the place with the least conflicts.
-        let mut min_conflicts:u16 = u16::max_value();
+        let mut min_conflicts: usize = usize::max_value();
         candidates.clear();
 
-        for row in 0..rows.len() {
-            let conflicts: u16 = conflicts(row, worst_queen_column, &rows);
+        for row in 0..n {
+
+            if row == worst_queen_row {
+                continue;
+            }
+
+            let conflicts: usize = conflicts.collapsed_rows_conflicts[row] +
+                    conflicts.collapsed_diag1_conflicts[conflicts.diag1_offset + worst_queen_column - row] +
+                    conflicts.collapsed_diag2_conflicts[worst_queen_column + row];
 
             if conflicts == min_conflicts {
                 candidates.push(row);
@@ -67,83 +93,80 @@ fn main() {
 
         if !candidates.is_empty() {
             let rand_index = rand::thread_rng().gen_range(0, candidates.len());
-            rows[worst_queen_column] = candidates[rand_index];
-            // println!("Move: #{}, min_conflicts: {} in R{}, out-of: {}", moves, min_conflicts, candidates[rand_index], candidates.len());
+            chessboard_1d[worst_queen_column] = candidates[rand_index];
+
+            let worst_queen_diag1 = conflicts.diag1_offset + worst_queen_column - worst_queen_row ;
+            let worst_queen_diag2 = worst_queen_column + worst_queen_row;
+
+            conflicts.collapsed_rows_conflicts[worst_queen_row] -= 1;
+            conflicts.collapsed_diag1_conflicts[worst_queen_diag1] -= 1;
+            conflicts.collapsed_diag2_conflicts[worst_queen_diag2] -= 1;
+
+            let new_queen_diag1 = conflicts.diag1_offset + worst_queen_column - candidates[rand_index] ;
+            let new_queen_diag2 = worst_queen_column + candidates[rand_index];
+
+            conflicts.collapsed_rows_conflicts[candidates[rand_index]] += 1;
+            conflicts.collapsed_diag1_conflicts[new_queen_diag1] += 1;
+            conflicts.collapsed_diag2_conflicts[new_queen_diag2] += 1;
         }
 
-        if moves == rows.len() * 2 {
-            // Trying too long... start oveprintln!("{:?}", rows);r.
-            shuffle_up(&mut rows);
+        if moves == chessboard_1d.len() * 2 {
+            // Trying too long... start oveprintln!("{:?}", chessboard_1d);r.
+            shuffle_up(&mut chessboard_1d);
+
+            for i in 0..(2*n-1) {
+                if i < n {
+                    conflicts.collapsed_rows_conflicts[i] = 0;
+                }
+                conflicts.collapsed_diag1_conflicts[i] = 0;;
+                conflicts.collapsed_diag2_conflicts[i] = 0;;
+            }
+            compute_all_conflicts(&chessboard_1d, &mut conflicts);
             moves = 0;
             // println!("--------------------------")
         }
 
-        // println!("Move: #{}: {:?}", moves, rows);
+        // println!("Move: #{}: {:?}", moves, chessboard_1d);
         moves += 1;
     }
 
     println!("COMPLETED");
-    println!("{:?}", rows);
+    println!("{:?}", chessboard_1d);
 }
 
-/**
- * Returns the number of queens that conflict with (row,col), not
- * counting the queen in column col.
- */
-pub fn conflicts(row: usize, col: usize, rows: &Vec<usize>) -> u16 {
-    let mut count: u16 = 0;
-
-    let mut c = 0;
-
-    while c < rows.len() {
-        if c == col { c += 1; continue; }
-
-        let r = rows[c];
-
-        if r == row {
-            // same row
-            count += 1;
-        } else {
-            let row_diff = if r > row {
-                r - row
-            } else {
-                row - r
-            };
-
-            let col_diff = if c > col {
-                c - col
-            } else {
-                col - c
-            };
-
-            if row_diff == col_diff {
-                // same diag
-                count += 1;
-            }
-        }
-        c += 1;
-    }
-
-    // println!("# conflicts for C{}R{} = {}", col, row, count);
-
-    count
-}
-
-pub fn shuffle_up(rows: &mut Vec<usize>) {
+pub fn shuffle_up(chessboard_1d: &mut Vec<usize>) {
     let mut i = 0;
 
-    while i < rows.len() {
-        rows[i] = i;
+    while i < chessboard_1d.len() {
+        chessboard_1d[i] = i;
         i += 1;
     }
 
     i = 0;
 
-    while i < rows.len() {
-        let j = rand::thread_rng().gen_range(0, rows.len());
-        let row_to_swap = rows[i];
-        rows[i] = rows[j];
-        rows[j] = row_to_swap;
+    while i < chessboard_1d.len() {
+        let j = rand::thread_rng().gen_range(0, chessboard_1d.len());
+        let row_to_swap = chessboard_1d[i];
+        chessboard_1d[i] = chessboard_1d[j];
+        chessboard_1d[j] = row_to_swap;
         i += 1;
+    }
+}
+
+pub fn compute_all_conflicts(chessboard_1d: &Vec<usize>, conflicts: &mut Conflicts) {
+    let mut col = 0;
+
+    while col < chessboard_1d.len() {
+
+        let row = chessboard_1d[col];
+
+        let diag1 = conflicts.diag1_offset + col - row ;
+        let diag2 = col + row;
+
+        conflicts.collapsed_rows_conflicts[row] += 1;
+        conflicts.collapsed_diag1_conflicts[diag1] += 1;
+        conflicts.collapsed_diag2_conflicts[diag2] += 1;
+
+        col += 1;
     }
 }
