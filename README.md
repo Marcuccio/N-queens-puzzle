@@ -1,4 +1,4 @@
-This code is able to solve the n-queens-problem with 10.000 queens in less than 5s
+This code is able to solve the n-queens-problem with 10K queens in less than 5s
 
 # Build & run
 `cargo run --release`
